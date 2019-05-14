@@ -2,8 +2,8 @@
 
 import { Terminal } from "xterm";
 import { split } from "shlex";
-
 import * as ansi from "ansi-escapes";
+import chalk from "chalk";
 
 const recordable = /^(\.|-|\w| |")$/;
 
@@ -126,4 +126,21 @@ export class Prompter {
     const position = await getCursor(this.term);
     return this.getArgs(this.term.cols - position.x);
   }
+}
+
+/** Add color and format difference. */
+export function formatDiff(dx: number, prec = 3): string {
+  const sign = Math.sign(dx) >= 0 ? "+" : "-";
+  const n = dx.toExponential(prec - 1);
+
+  let color: string = "whiteBright";
+  if (dx > 0) {
+    color = "greenBright";
+  } else if (dx == 0) {
+    color = "yellowBright";
+  } else if (dx < 0) {
+    color = "redBright";
+  }
+
+  return (chalk as any)[color](`(${sign}${n})`);
 }

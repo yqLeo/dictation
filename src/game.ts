@@ -3,7 +3,7 @@
 import { Terminal } from "xterm";
 import chalk from "chalk";
 
-import { Prompter } from "./prompt";
+import { Prompter, formatDiff } from "./prompt";
 import * as setup from "./setup";
 import Cmd from "./cmd";
 
@@ -20,7 +20,7 @@ class Planet {
   /** Average change in resources per day (since last forward). */
   public rate: setup.Resources;
 
-  constructor(state: setup.PlanetaryState) {
+  constructor(public name: string, state: setup.PlanetaryState) {
     this.info = Object.assign({}, state);
     this.raw = Object.assign({}, state.initResources); // avoid reference
     this.available = {
@@ -38,15 +38,19 @@ class Planet {
   }
 
   /** Number to measure quality of life. */
-  get qualityOfLife(): number {
-    if (this.available.population == 0) {
-      return 0;
-    }
+  get totalQol(): number {
     let qol = this.available.water;
     qol *= this.available.food;
     qol *= this.available.energy;
-    qol /= this.available.population;
     return qol;
+  }
+
+  get qolPerCapita(): number {
+    if (this.available.population == 0) {
+      return 0;
+    } else {
+      return this.totalQol / this.available.population ** 3;
+    }
   }
 
   /** X position of the planet. */
@@ -66,10 +70,15 @@ class Planet {
     return Math.sqrt(dx ** 2 + dy ** 2);
   }
 
+  /** Step forward a single day for this planet. */
+  step() {
+    // calculate gain first
+    // TODO
+  }
+
   /** Simulate the planet forward in time. */
   forward(days: number) {
-    // TODO
-    // process gains before losses
+    for (let i = 0; i < days; i++) this.step();
   }
 }
 
@@ -93,10 +102,10 @@ export class Game {
 
     // setup commands
     const cmd = new Cmd();
-    cmd.on("dev", () => {
+    cmd.asyncOn("dev", () => {
       devIndicator = !devIndicator;
     });
-    cmd.on("check", async (args: Array<string>) => {
+    cmd.asyncOn("check", async (args: Array<string>) => {
       const name = args[0];
       if (Object.keys(this.planets).indexOf(name) == -1) {
         this.term.writeln(chalk.redBright("Valid planets:"));
@@ -107,19 +116,24 @@ export class Game {
         await this.check(this.planets[name]);
       }
     });
-    cmd.on("forward", async (args: Array<string>) => {
+    cmd.asyncOn("forward", async (args: Array<string>) => {
       const days = Number(args[0]);
       await this.forward(days);
     });
-    cmd.on("transfer", () => {
-      this.transfer("", 0, undefined as any, undefined as any); // TODO
+    cmd.asyncOn("transfer", async (args: string[]) => {
+      // TODO perform better argument verification
+      const res = args[0];
+      const amt = Number(args[1]);
+      const fromP = this.planets[args[2]];
+      const toP = this.planets[args[3]];
+      await this.transfer(res, amt, fromP, toP);
     });
     this.cmd = cmd;
 
     // create the planets
     const planets: any = {};
     for (let name in setup.planets) {
-      planets[name] = new Planet((setup.planets as any)[name]);
+      planets[name] = new Planet(name, (setup.planets as any)[name]);
     }
     this.planets = planets;
   }
@@ -132,11 +146,11 @@ export class Game {
       if (devIndicator) {
         this.term.writeln(JSON.stringify(args));
       }
-      const success = this.cmd.parseArgs(args);
+      const success = await this.cmd.parseArgs(args);
       if (!success) {
         this.term.writeln(chalk.redBright("Commands:"));
         for (let c of [
-          "check <planet>",
+          "check <planet> [planetTo]",
           "forward <days>",
           "transfer <res> <amt> <from> <to>"
         ]) {
@@ -146,20 +160,37 @@ export class Game {
     }
   }
 
-  async check(planet: Planet) {
+  async check(planet: Planet, planetTo?: Planet) {
+    // TODO
     for (let resource in planet.available) {
       const available: number = (planet.available as any)[resource];
       const rate: number = (planet.available as any)[resource];
-      const data = `${available.toExponential(2)} ${rate.toExponential(2)}`;
-      this.term.writeln(`${chalk.greenBright(`${resource}:`)} ${data}`);
+      const data = `${available.toExponential(2)} ${formatDiff(rate, 3)}`;
+      this.term.writeln(`${resource}: ${data}`);
     }
   }
 
-  async forward(days: number) {
-    this.term.writeln(chalk.redBright("Work in progress.")); // TODO
+  async forward(days: number, subdivide = 10, wait = 5000) {
+    for (let i = 0; i < subdivide; i++) {
+      let daysLeft = Math.round(((subdivide - i) / subdivide) * days);
+      this.term.writeln(`Waiting ${daysLeft} days...`);
+      await sleep(wait / subdivide);
+    }
   }
 
   async transfer(resource: string, amount: number, fromP: Planet, toP: Planet) {
-    this.term.writeln(chalk.redBright("Work in progress.")); // TODO
+    this.term.writeln(
+      chalk.blueBright(
+        `Setting up continuous trade of ${formatDiff(
+          amount
+        )} ${resource} from ${fromP.name} to ${toP.name}...`
+      )
+    ); // TODO
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => {
+    setTimeout(() => resolve(), ms);
+  });
 }

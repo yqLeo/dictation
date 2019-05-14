@@ -3,6 +3,7 @@ function rad(d: number): number {
   return ((2 * Math.PI) / 360) * d;
 }
 
+/** Container for resources. */
 export interface Resources {
   /** Amount of water in liters. */
   water: number;
@@ -14,6 +15,14 @@ export interface Resources {
   /** Current population living on planet. */
   population: number;
 }
+
+/** Resources consumed by one person per day. */
+export const refStd: Resources = {
+  water: 350,
+  food: 1.878,
+  energy: 1e10,
+  population: 1
+};
 
 /** Facts about a planet. */
 export interface PlanetaryState {
@@ -40,10 +49,27 @@ export namespace planets {
 
     initResources: {
       water: 1.39e21,
-      food: 1.878 * 7.53e9 * 365 * 10000,
+      food: refStd.food * 7.53e9 * 365 * 10e3,
       energy: 5.97e24 * 1e-6,
 
       population: 7.53e9
+    }
+  };
+
+  /** Another inner planet, */
+  export const mars: PlanetaryState = {
+    gravity: 3.7,
+    distance: 227.9e6,
+    period: 687,
+    theta: Math.PI / 4,
+
+    // mostly made up
+    initResources: {
+      water: 2.1e19,
+      food: refStd.food * refStd.population * 365 * 1e3,
+      energy: earth.initResources.energy / 1e3,
+
+      population: 0
     }
   };
 
