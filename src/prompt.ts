@@ -60,6 +60,8 @@ export class CursorPosition {
 
 /** Provide user input abilities. */
 export class Prompter {
+  public history: string[][] = [];
+
   constructor(public term: Terminal, public prompt = "> ") {}
 
   private inputSpace(col: number): number {
@@ -92,13 +94,23 @@ export class Prompter {
     const originalPosition = await new CursorPosition(this.term).save();
 
     return new Promise(resolve => {
-      const data: string[] = [];
+      let data: string[] = [];
+      this.history.push(data); // store data into history
+      let hIndex = 0;
       const listener = (key: string, ev: KeyboardEvent): void => {
         if (ev.key == "Enter") {
           this.term.off("key", listener); // remove input listener
           this.term.writeln(""); // move to the next line
           return resolve(data.join("")); // return data to promise
-        } else if (ev.key == "Backspace") {
+        } /*else if (ev.key == "ArrowUp") { // HISTORY IS NOT WORKING
+          hIndex = Math.max(hIndex - 1, 0);
+          data = this.history[hIndex].slice(); // copy data from history
+        } else if (ev.key == "ArrowDown") {
+          hIndex = Math.min(hIndex + 1, this.history.length - 1);
+          data = this.history[hIndex].slice(); // copy data from history
+        } */ else if (
+          ev.key == "Backspace"
+        ) {
           data.pop(); // remove character from input
         } else if (key.match(recordable)) {
           data.push(key); // add character to input

@@ -3,7 +3,7 @@
 import { Terminal } from "xterm";
 import chalk from "chalk";
 
-import { Prompter, formatDiff } from "./prompt";
+import { Prompter, formatDiff, getCursor } from "./prompt";
 import * as setup from "./setup";
 import Cmd from "./cmd";
 
@@ -88,8 +88,18 @@ const pairRgx = /^(.*) (.*)$/; // "<from> <to>"
 
 /** Master Game Logic */
 export class Game {
+  public hError = (reason: Error) => {
+    if (typeof reason == "string") {
+      this.term.writeln(chalk.magentaBright(reason));
+    } else {
+      this.term.writeln(chalk.magentaBright(reason.message));
+    }
+    throw reason;
+  };
+
   public prompter: Prompter;
   public cmd: Cmd;
+  public currentDay: number = 0;
   public planets: Planets;
   /** Amount of resources being transfered each day from one planet to another. */
   public transfers: { [namePair: string]: setup.Resources } = {};
@@ -102,30 +112,51 @@ export class Game {
 
     // setup commands
     const cmd = new Cmd();
+    cmd.on("error", this.hError); // do not suppress errors
+    cmd.asyncOn("", () => {}); // nothing command
     cmd.asyncOn("dev", () => {
       devIndicator = !devIndicator;
     });
     cmd.asyncOn("check", async (args: Array<string>) => {
-      const name = args[0];
-      if (Object.keys(this.planets).indexOf(name) == -1) {
-        this.term.writeln(chalk.redBright("Valid planets:"));
-        for (let name in this.planets) {
-          this.term.writeln(`  ${chalk.redBright(name)}`);
+      const names = args[1] == undefined ? [args[0]] : [args[0], args[1]];
+      // verify names make sense
+      for (let name of names) {
+        if (Object.keys(this.planets).indexOf(name) == -1) {
+          this.listPlanets();
+          return; // exit fast
         }
-      } else {
-        await this.check(this.planets[name]);
       }
+      await this.check(this.planets[names[0]], this.planets[names[1]]);
     });
     cmd.asyncOn("forward", async (args: Array<string>) => {
-      const days = Number(args[0]);
+      let days: number;
+      try {
+        days = Number(args[0]);
+      } catch (e) {
+        this.error(`"${args[0]}" is not a number`);
+        return;
+      }
       await this.forward(days);
     });
     cmd.asyncOn("transfer", async (args: string[]) => {
-      // TODO perform better argument verification
       const res = args[0];
-      const amt = Number(args[1]);
+      if (Object.keys(setup.refStd).indexOf(res) == -1) {
+        this.listOptions("resources", Object.keys(setup.refStd));
+        return;
+      }
+      let amt: number;
+      try {
+        amt = Number(args[1]);
+      } catch (e) {
+        this.error(`"${args[1]}" is not a number`);
+        return;
+      }
       const fromP = this.planets[args[2]];
       const toP = this.planets[args[3]];
+      if (fromP == undefined || toP == undefined) {
+        this.listPlanets();
+        return;
+      }
       await this.transfer(res, amt, fromP, toP);
     });
     this.cmd = cmd;
@@ -139,14 +170,18 @@ export class Game {
   }
 
   async play(): Promise<void> {
+    this.term.writeln(setup.openingText);
+
     // start game with 1 year of progress
 
     while (true) {
       const args = await this.prompter.fromPrompt();
+      // enable developer info
       if (devIndicator) {
         this.term.writeln(JSON.stringify(args));
       }
-      const success = await this.cmd.parseArgs(args);
+      // check that a valid command was given
+      const success = await this.cmd.parseArgs(args).catch(this.hError); // do not suppress errors
       if (!success) {
         this.term.writeln(chalk.redBright("Commands:"));
         for (let c of [
@@ -160,32 +195,207 @@ export class Game {
     }
   }
 
+  error(msg: string): void {
+    this.term.writeln(chalk.redBright(msg));
+  }
+
+  async wrapPrint(msg: string): Promise<void> {
+    const sep = msg.split(" ");
+    this.term.write(sep[0]);
+    for (let word of sep.slice(1)) {
+      if (this.term.cols - (await getCursor(this.term)).x <= word.length) {
+        this.term.write("\n\r");
+      } else {
+        this.term.write(` ${word}`);
+      }
+    }
+  }
+
+  /** Print valid options. */
+  listOptions(kind: string, opts: string[]): void {
+    this.error(`Valid ${kind}:`);
+    for (let name of opts) {
+      this.error(`  ${name}`);
+    }
+  }
+
+  /** Print names of all planets in the solar system. */
+  listPlanets(): void {
+    this.listOptions("planets", Object.keys(this.planets));
+  }
+
+  /** Print available resources and their changes over time. */
+  listResources(av: setup.Resources, ra?: setup.Resources): void {
+    for (let resource in av) {
+      const available: number = av[resource];
+      let data = `${available.toExponential(2)}`;
+
+      // only add rate information if necessary
+      if (ra != undefined) {
+        const rate: number = ra[resource];
+        data += ` ${formatDiff(rate)}`;
+      }
+
+      // IMPLICIT INDENT
+      this.term.writeln(`  ${resource}: ${data}`);
+    }
+  }
+
+  /** Print the current status of a planet. */
+  showPlanetStatus(planet: Planet): void {
+    this.term.writeln(chalk.blueBright(`${planet.name.toUpperCase()}:`));
+    const orbit = Math.round(planet.info.theta * (180 / Math.PI));
+    this.term.writeln(`  orbit: ${orbit}_deg`);
+    this.listResources(planet.available, planet.rate);
+  }
+
   async check(planet: Planet, planetTo?: Planet) {
-    // TODO
-    for (let resource in planet.available) {
-      const available: number = (planet.available as any)[resource];
-      const rate: number = (planet.available as any)[resource];
-      const data = `${available.toExponential(2)} ${formatDiff(rate, 3)}`;
-      this.term.writeln(`${resource}: ${data}`);
+    this.showPlanetStatus(planet);
+
+    // provide extra info if necessary
+    if (planetTo != undefined) {
+      // print transfer information
+      const res = this.getTransfer(planet, planetTo);
+      // might need to correct sign of values
+      let corrected: setup.Resources;
+      if (planet.name <= planetTo.name) {
+        corrected = res;
+      } else {
+        // flip signs
+        corrected = {
+          water: -res.water,
+          food: -res.food,
+          energy: -res.energy,
+          population: -res.population
+        };
+      }
+
+      this.term.writeln(
+        chalk.blueBright(
+          `Transfers from ${planet.name.toUpperCase()} to ${planetTo.name.toUpperCase()}`
+        )
+      );
+      this.term.writeln(
+        `  distance: ${planet.distance(planetTo).toExponential(2)}`
+      );
+      this.listResources(corrected);
+
+      // print other planet's status
+      this.showPlanetStatus(planetTo);
     }
   }
 
   async forward(days: number, subdivide = 10, wait = 5000) {
+    // bind abort option
+    this.term.writeln("Hit (q) to stop.");
+    let abort = false;
+    const aborter = (key: string) => {
+      if (key == "q") {
+        abort = true;
+      }
+    };
+    this.term.on("key", aborter);
+
+    // perform all updates
     for (let i = 0; i < subdivide; i++) {
+      // split updates into sizable portions
       let daysLeft = Math.round(((subdivide - i) / subdivide) * days);
+      // provide simple feedback
       this.term.writeln(`Waiting ${daysLeft} days...`);
-      await sleep(wait / subdivide);
+      let prevQol = this.qolScore;
+
+      // calculate number of rounds (days) needed to wait for this portion
+      let rounds: number;
+      if (i == subdivide - 1) {
+        rounds = days % subdivide;
+      } else {
+        rounds = Math.floor(days / subdivide);
+      }
+      // ensure current execution does not halt
+      const pUpdate = new Promise<void>(resolve => {
+        setImmediate(() => {
+          for (let r = 0; r < rounds; r++) this.update();
+          resolve();
+        });
+      });
+
+      // execute sleep and update at the same time
+      await Promise.all([pUpdate, sleep(wait / subdivide)]);
+
+      // give ongoing status
+      this.term.writeln(
+        `  QOL: ${this.qolScore} ${formatDiff(this.qolScore - prevQol)}`
+      );
+
+      // abort if necessary
+      if (abort) {
+        break;
+      }
     }
+
+    // unbind abort option
+    this.term.off("key", aborter);
+  }
+
+  /** Update the game world by one day. */
+  async update() {
+    // process planets
+    for (let planet of Object.values(this.planets)) {
+      planet.step();
+    }
+    // process transfers
+    // TODO
   }
 
   async transfer(resource: string, amount: number, fromP: Planet, toP: Planet) {
     this.term.writeln(
-      chalk.blueBright(
-        `Setting up continuous trade of ${formatDiff(
-          amount
-        )} ${resource} from ${fromP.name} to ${toP.name}...`
-      )
-    ); // TODO
+      `Setting up continual transfer of \n\r  ${formatDiff(
+        amount
+      )} \n\r${resource} from ${fromP.name.toUpperCase()} to ${toP.name.toUpperCase()}...`
+    );
+    const res = this.getTransfer(fromP, toP);
+    // correct sign
+    if (fromP.name <= toP.name) {
+      res[resource] += amount;
+    } else {
+      res[resource] -= amount;
+    }
+  }
+
+  /** Convert key from transfers dictionary to planets. */
+  rgxTransfer(s: string): { p1: Planet; p2: Planet } {
+    const match = s.match(pairRgx);
+    if (match) {
+      let p1s = match[1];
+      let p2s = match[2];
+      let p1 = this.planets[p1s];
+      let p2 = this.planets[p2s];
+      return { p1: p1, p2: p2 };
+    } else {
+      // this should never happen
+      throw new Error("bad transfer pair");
+    }
+  }
+
+  getTransfer(p1: Planet, p2: Planet): setup.Resources {
+    const l = [p1.name, p2.name];
+    let res = this.transfers[l.sort().join(" ")];
+    // create a default zero-transfer if one does not exist
+    if (res == undefined) {
+      res = {
+        water: 0,
+        food: 0,
+        energy: 0,
+        population: 0
+      };
+      this.setTransfer(p1, p2, res);
+    }
+    return res;
+  }
+
+  setTransfer(p1: Planet, p2: Planet, t: setup.Resources): void {
+    const l = [p1.name, p2.name];
+    this.transfers[l.sort().join(" ")] = t;
   }
 }
 

@@ -5,13 +5,13 @@ import { Terminal } from "xterm";
 import * as fit from "xterm/lib/addons/fit/fit";
 import chalk from "chalk";
 
-import { Game } from "./game";
-
-Terminal.applyAddon(fit);
-
 // We know that chalk will work here.
 chalk.enabled = true;
 chalk.level = 1;
+
+import { Game } from "./game";
+
+Terminal.applyAddon(fit);
 
 /** Create and fit a new terminal into the screen. */
 function createTerminal(): Terminal {

@@ -1,10 +1,19 @@
+import chalk from "chalk";
+
 /** Convert from degrees to radians. */
 function rad(d: number): number {
   return ((2 * Math.PI) / 360) * d;
 }
 
+export const openingText =
+  chalk.cyanBright(`Welcome to Dictation!\n\r`) +
+  `  A game about managing the resources of the Solar System, ` +
+  `providing your citizens with the best life possible.`;
+
 /** Container for resources. */
 export interface Resources {
+  /** General requirement for discoverability. */
+  [key: string]: number;
   /** Amount of water in liters. */
   water: number;
   /** Amount of edible food in kilograms. */
