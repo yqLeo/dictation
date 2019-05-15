@@ -5,6 +5,16 @@ function rad(d: number): number {
   return ((2 * Math.PI) / 360) * d;
 }
 
+/** Important constants. */
+export namespace c {
+  /** Production of resources as a factor of untapped. */
+  export const gainFactor = 0.1;
+  /** Cost of transferring resources. */
+  export const transferFactor = 2.0e-2;
+  /** Cost of escaping from planet with resources. */
+  export const escapeFactor = 1.0;
+}
+
 export const openingText =
   chalk.cyanBright(`Welcome to Dictation!\n\r`) +
   `  A game about managing the resources of the Solar System, ` +
@@ -32,6 +42,9 @@ export const refStd: Resources = {
   energy: 1e10,
   population: 1
 };
+
+/** Average quality of life. */
+export const qolBase = refStd.water * refStd.food * refStd.energy;
 
 /** Facts about a planet. */
 export interface PlanetaryState {
@@ -92,6 +105,11 @@ export namespace planets {
     water: earth.water / 1e9
   };
   */
+}
+
+export const earthAvailable: Resources = {} as any;
+for (let name of Object.keys(planets.earth.initResources)) {
+  earthAvailable[name] = refStd[name] * planets.earth.initResources.population;
 }
 
 export interface SetupData {

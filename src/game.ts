@@ -63,6 +63,14 @@ class Planet {
     return this.info.distance * Math.sin(this.info.theta);
   }
 
+  get escape(): number {
+    return this.info.gravity ** 2;
+  }
+
+  get productivity(): number {
+    return this.totalQol / setup.qolBase;
+  }
+
   /** Calculate distance to another planet. */
   distance(planet: Planet) {
     const dx = planet.x - this.x;
@@ -73,7 +81,31 @@ class Planet {
   /** Step forward a single day for this planet. */
   step() {
     // calculate gain first
-    // TODO
+    for (let res of Object.keys(this.available)) {
+      if (res == "population") {
+        this.available.population +=
+          setup.c.gainFactor *
+          this.available.population *
+          (this.productivity - 1);
+        this.available.population = Math.max(this.available.population, 0);
+      } else {
+        let dr = this.raw[res] * this.productivity;
+        dr = Math.min(dr, this.raw[res]); // cannot pull out more than exists
+        this.raw[res] -= dr;
+        this.available[res] += dr;
+      }
+    }
+
+    // calculate consumtion
+    for (let res of Object.keys(this.available)) {
+      // population taken into account above
+      if (res != "population") {
+        let dr = setup.refStd[res] * this.available.population;
+        this.available[res] -= Math.min(dr, this.available[res]); // cannot consume more than exists
+      }
+    }
+
+    this.info.theta += (2 * Math.PI) / this.info.period; // perform rotation
   }
 
   /** Simulate the planet forward in time. */
@@ -162,9 +194,12 @@ export class Game {
     this.cmd = cmd;
 
     // create the planets
-    const planets: any = {};
+    const planets: { [name: string]: Planet } = {};
     for (let name in setup.planets) {
       planets[name] = new Planet(name, (setup.planets as any)[name]);
+      if (name == "earth") {
+        planets[name].available = Object.assign({}, setup.earthAvailable);
+      }
     }
     this.planets = planets;
   }
@@ -296,6 +331,9 @@ export class Game {
     };
     this.term.on("key", aborter);
 
+    wait = Math.min(wait, wait * (days / subdivide));
+    subdivide = Math.min(subdivide, days); // don't waste time
+
     // perform all updates
     for (let i = 0; i < subdivide; i++) {
       // split updates into sizable portions
@@ -342,9 +380,30 @@ export class Game {
     // process planets
     for (let planet of Object.values(this.planets)) {
       planet.step();
+      this.qolScore += planet.totalQol;
     }
+
     // process transfers
-    // TODO
+    for (let [namePair, res] of Object.entries(this.transfers)) {
+      const { p1, p2 } = this.rgxTransfer(namePair); // already in order
+      for (let name in res) {
+        let reqE: number = Math.abs(setup.c.transferFactor * res[name]); // energy req to transfer amt
+        let dr: number;
+        if (res[name] >= 0) {
+          reqE += Math.abs(setup.c.escapeFactor * res[name] * p1.escape);
+          let loss = Math.min(p1.available.energy / reqE, 1); // when the transfer cannot be afforded
+          reqE = Math.min(reqE, p1.available.energy);
+          dr = Math.min(p1.available[name], res[name] * loss);
+        } else {
+          reqE += Math.abs(setup.c.escapeFactor * res[name] * p2.escape);
+          let loss = Math.min(p2.available.energy / reqE, 1); // when the transfer cannot be afforded
+          reqE = Math.min(reqE, p2.available.energy);
+          dr = Math.max(-p2.available[name], res[name] * loss);
+        }
+        p1.available[name] -= dr;
+        p2.available[name] += dr;
+      }
+    }
   }
 
   async transfer(resource: string, amount: number, fromP: Planet, toP: Planet) {
