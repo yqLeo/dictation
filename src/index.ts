@@ -49,4 +49,4 @@ async function main(): Promise<void> {
   await game.play();
 }
 
-main();
+window.addEventListener("load", main);

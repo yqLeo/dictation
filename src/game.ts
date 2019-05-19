@@ -144,11 +144,15 @@ export class Game {
 
     // setup commands
     const cmd = new Cmd();
+
     cmd.on("error", this.hError); // do not suppress errors
+
     cmd.asyncOn("", () => {}); // nothing command
+
     cmd.asyncOn("dev", () => {
       devIndicator = !devIndicator;
     });
+
     cmd.asyncOn("check", async (args: Array<string>) => {
       const names = args[1] == undefined ? [args[0]] : [args[0], args[1]];
       // verify names make sense
@@ -160,6 +164,7 @@ export class Game {
       }
       await this.check(this.planets[names[0]], this.planets[names[1]]);
     });
+
     cmd.asyncOn("forward", async (args: Array<string>) => {
       let days: number;
       try {
@@ -170,6 +175,7 @@ export class Game {
       }
       await this.forward(days);
     });
+
     cmd.asyncOn("transfer", async (args: string[]) => {
       const res = args[0];
       if (Object.keys(setup.refStd).indexOf(res) == -1) {
@@ -191,6 +197,7 @@ export class Game {
       }
       await this.transfer(res, amt, fromP, toP);
     });
+
     this.cmd = cmd;
 
     // create the planets
@@ -205,9 +212,15 @@ export class Game {
   }
 
   async play(): Promise<void> {
+    this.term.focus();
+
     this.term.writeln(setup.openingText);
 
     // start game with 1 year of progress
+    this.term.writeln("Waiting one year automatically...");
+    // await this.forward(365, 1);
+
+    this.term.scrollToTop();
 
     while (true) {
       const args = await this.prompter.fromPrompt();
