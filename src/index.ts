@@ -1,6 +1,7 @@
 import "./style.scss";
 import "../node_modules/xterm/dist/xterm.css";
 
+import * as WebFont from "webfontloader";
 import { Terminal } from "xterm";
 import * as fit from "xterm/lib/addons/fit/fit";
 import chalk from "chalk";
@@ -15,9 +16,9 @@ Terminal.applyAddon(fit);
 
 /** Create and fit a new terminal into the screen. */
 function createTerminal(): Terminal {
-  const terminalDiv = document.createElement("div");
-  terminalDiv.id = "terminal";
-  document.body.appendChild(terminalDiv);
+  const terminalDiv: HTMLDivElement = document.getElementById(
+    "terminal"
+  ) as any;
 
   const term = new Terminal({
     fontFamily: "'IBM Plex Mono', monospace",
@@ -49,4 +50,9 @@ async function main(): Promise<void> {
   await game.play();
 }
 
-window.addEventListener("load", main);
+WebFont.load({
+  google: {
+    families: ["IBM Plex Mono"]
+  },
+  active: main
+});

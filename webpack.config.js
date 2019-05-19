@@ -36,7 +36,11 @@ module.exports = {
   },
   plugins: [
     new HtmlWebpackPlugin({
-      title: "Dictation"
+      title: "Dictation",
+      inject: false,
+      template: require("html-webpack-template"),
+
+      appMountId: "terminal"
     }),
     new MiniCssExtractPlugin({ filename: "[name].css" })
   ]
