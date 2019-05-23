@@ -1,5 +1,3 @@
-import chalk from "chalk";
-
 import { Resources, PlanetaryState } from "./planet";
 
 /** Convert from degrees to radians. */
@@ -10,8 +8,6 @@ function rad(d: number): number {
 function perYearToDay(x: number): number {
   return (1 + x) ** (1 / 365) - 1;
 }
-
-export const openingText = chalk.cyanBright(`Welcome to Dictation!\n`);
 
 /** Resources consumed by one person per day. */
 export const refStd: Resources = {

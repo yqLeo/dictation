@@ -1,3 +1,5 @@
+import chalk from "chalk";
+
 import * as sim from "./sim";
 // circular import sort of
 import * as setup from "./setup";
@@ -18,12 +20,19 @@ export interface Resources {
 }
 
 /** Some string helpers for giving units to resources. */
-export const units: { [name in keyof Resources]: string } = {
+export const units: { [name: string]: string } = {
   water: "L", // liters
   food: "kg", // kilograms
   energy: "J", // joules
-  population: ""
+  population: "",
+
+  // extra units
+  angle: "_deg", // degrees
+  distance: "m" // meters
 };
+for (const key in units) {
+  units[key] = chalk.magentaBright(units[key]);
+}
 
 /** Simply return a resource object with all zeroes. */
 export function zeroRes(): Resources {
@@ -124,10 +133,17 @@ export class Planet {
     return this.info.distance * Math.sin(this.info.theta);
   }
 
+  /** Theta of the planet, but in degrees. */
+  get deg(): number {
+    return this.info.theta * (180 / Math.PI);
+  }
+
+  /** Escape factor. */
   get escape(): number {
     return this.info.gravity ** 2;
   }
 
+  /** Average productivity per capita of the planet. */
   get productivity(): number {
     return this.qolPerCapita / refPlanet.qolPerCapita;
   }

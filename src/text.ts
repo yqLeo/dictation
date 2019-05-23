@@ -163,6 +163,7 @@ export function feedWrap(s: string, width: number): string {
   return wordWrap(s, width).join("\n");
 }
 
+/** Control column justification. */
 export enum Justify {
   left,
   right
@@ -170,8 +171,38 @@ export enum Justify {
 
 /** Fit 2D data into columns. */
 export function tablify(data: string[][], format: Justify[] = []): string[] {
-  // TODO
-  return [];
+  // handle potential asci codes
+  const info = data.map(l => l.map(r => new VWord(r)));
+  // convert information to sizes
+  const sizes = info.map(l => l.map(w => w.length));
+
+  // calculate width of each column
+  const colWidths: number[] = [];
+  for (const row of sizes) {
+    row.forEach((v, c) => {
+      colWidths[c] = Math.max(colWidths[c] || 0, v);
+    });
+  }
+
+  return info.map(row =>
+    row
+      .map((w, c) => {
+        const padding = " ".repeat(colWidths[c] - w.length);
+
+        if (format[c] === Justify.left || format[c] === undefined) {
+          return w.raw + padding;
+        } else if (format[c] === Justify.right) {
+          return padding + w.raw;
+        } else {
+          throw new Error("unknown justification option");
+        }
+      })
+      .join(" ")
+  );
+}
+
+export function feedTablify(data: string[][], format: Justify[] = []): string {
+  return tablify(data, format).join("\n");
 }
 
 /** Formats a string with a specified object. */
@@ -190,4 +221,11 @@ export function substitute(s: string, obj: { [name: string]: string }): string {
       return rendered;
     }
   });
+}
+
+/** Helper function for declaring dependencies for string. */
+export function ask<T>(
+  s: string
+): (obj: { [key in keyof T]: string }) => string {
+  return obj => substitute(s, obj);
 }

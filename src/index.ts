@@ -8,7 +8,7 @@ import chalk from "chalk";
 
 // We know that chalk will work here.
 chalk.enabled = true;
-chalk.level = 1;
+chalk.level = 3;
 
 Terminal.applyAddon(fit);
 

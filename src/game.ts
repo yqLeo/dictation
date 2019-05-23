@@ -3,7 +3,7 @@
 import { Terminal } from "xterm";
 import chalk from "chalk";
 
-import { feedWrap } from "./text";
+import { feedWrap, VWord, feedTablify, Justify } from "./text";
 import { Prompter, formatDiff, getCursor } from "./prompt";
 import * as setup from "./setup";
 import Cmd from "./cmd";
@@ -109,7 +109,7 @@ export class Game {
   }
 
   get textWidth(): number {
-    return this.term.cols - 1;
+    return this.term.cols;
   }
 
   writelnWrap(s: string): void {
@@ -117,10 +117,11 @@ export class Game {
   }
 
   center(s: string): string {
-    if (s.length > this.textWidth) {
+    const w = new VWord(s);
+    if (w.length > this.textWidth) {
       throw new Error("cannot center text longer than terminal width");
     } else {
-      const padding = " ".repeat(Math.floor((this.textWidth - s.length) / 2));
+      const padding = " ".repeat(Math.floor((this.textWidth - w.length) / 2));
       return padding + s;
     }
   }
@@ -128,11 +129,18 @@ export class Game {
   async play(): Promise<void> {
     this.term.focus();
 
-    this.term.writeln("\n" + setup.openingText);
+    this.term.writeln("\n");
+    this.term.writeln(this.center(media.title));
+    this.term.writeln("");
+
     this.writelnWrap(media.introduction);
+    this.term.writeln("");
+    this.writelnWrap(media.help);
+
+    this.term.writeln("");
 
     // start game with 1 year of progress
-    this.term.writeln("Waiting one year automatically...");
+    // this.term.writeln("Waiting one year automatically...");
     // await this.forward(365, 1);
 
     this.term.scrollToTop();
@@ -162,18 +170,6 @@ export class Game {
     this.term.writeln(chalk.redBright(msg));
   }
 
-  async wrapPrint(msg: string): Promise<void> {
-    const sep = msg.split(" ");
-    this.term.write(sep[0]);
-    for (let word of sep.slice(1)) {
-      if (this.term.cols - (await getCursor(this.term)).x <= word.length) {
-        this.term.write("\n");
-      } else {
-        this.term.write(` ${word}`);
-      }
-    }
-  }
-
   /** Print valid options. */
   listOptions(kind: string, opts: string[]): void {
     this.error(`Valid ${kind}:`);
@@ -187,29 +183,48 @@ export class Game {
     this.listOptions("planets", Object.keys(this.planets));
   }
 
-  /** Print available resources and their changes over time. */
-  listResources(av: Resources, ra?: Resources): void {
+  /** Produce the resources in the form of a table. */
+  dataResources(av: Resources, ra?: Resources): string[][] {
+    const data: string[][] = [];
+
     for (let resource in av) {
+      const row: string[] = [`  ${resource}:`];
+
+      // get amount of resource available
       const available: number = av[resource];
-      let data = `${available.toExponential(2)}${units[resource]}`;
+      row.push(`${available.toExponential(2)}${units[resource]}`);
 
       // only add rate information if necessary
       if (ra !== undefined) {
         const rate: number = ra[resource];
-        data += ` ${formatDiff(rate)}`;
+        row.push(formatDiff(rate));
       }
 
-      // IMPLICIT INDENT
-      this.term.writeln(`  ${resource}: ${data}`);
+      data.push(row);
     }
+
+    return data;
+  }
+
+  /** Print 3 column data (name, amt, dx). */
+  printData(data: string[][]): void {
+    this.term.writeln(
+      feedTablify(data, [Justify.right, Justify.left, Justify.left])
+    );
+  }
+
+  /** Print available resources and their changes over time. */
+  printResources(av: Resources, ra?: Resources): void {
+    this.printData(this.dataResources(av, ra));
   }
 
   /** Print the current status of a planet. */
   showPlanetStatus(planet: Planet): void {
     this.term.writeln(chalk.blueBright(`${planet.name.toUpperCase()}:`));
-    const orbit = Math.round(planet.info.theta * (180 / Math.PI));
-    this.term.writeln(`  orbit: ${orbit}_deg`);
-    this.listResources(planet.available, planet.rate);
+    const data = [["  orbit:", `${Math.round(planet.deg)}${units.angle}`]];
+    this.printData(
+      data.concat(this.dataResources(planet.available, planet.rate))
+    );
   }
 
   async check(planet: Planet, planetTo?: Planet) {
@@ -225,10 +240,13 @@ export class Game {
           `Transfers from ${planet.name.toUpperCase()} to ${planetTo.name.toUpperCase()}`
         )
       );
-      this.term.writeln(
-        `  distance: ${planet.distance(planetTo).toExponential(2)}`
-      );
-      this.listResources(res);
+      const data = [
+        [
+          "  distance:",
+          `${planet.distance(planetTo).toExponential(2)}${units.distance}`
+        ]
+      ];
+      this.printData(data.concat(this.dataResources(res)));
 
       // print other planet's status
       this.showPlanetStatus(planetTo);
