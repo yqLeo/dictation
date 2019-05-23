@@ -1,39 +1,17 @@
 import chalk from "chalk";
 
+import { Resources, PlanetaryState } from "./planet";
+
 /** Convert from degrees to radians. */
 function rad(d: number): number {
   return ((2 * Math.PI) / 360) * d;
 }
 
-/** Important constants. */
-export namespace c {
-  /** Production of resources as a factor of untapped. */
-  export const gainFactor = 0.1;
-  /** Cost of transferring resources. */
-  export const transferFactor = 2.0e-2;
-  /** Cost of escaping from planet with resources. */
-  export const escapeFactor = 1.0;
+function perYearToDay(x: number): number {
+  return (1 + x) ** (1 / 365) - 1;
 }
 
-export const openingText =
-  chalk.cyanBright(`Welcome to Dictation!\n\r`) +
-  `  A game about managing the resources of the Solar System, ` +
-  `providing your citizens with the best life possible.`;
-
-/** Container for resources. */
-export interface Resources {
-  /** General requirement for discoverability. */
-  [key: string]: number;
-  /** Amount of water in liters. */
-  water: number;
-  /** Amount of edible food in kilograms. */
-  food: number;
-  /** Net obtainable energy in joules. */
-  energy: number;
-
-  /** Current population living on planet. */
-  population: number;
-}
+export const openingText = chalk.cyanBright(`Welcome to Dictation!\n`);
 
 /** Resources consumed by one person per day. */
 export const refStd: Resources = {
@@ -43,21 +21,10 @@ export const refStd: Resources = {
   population: 1
 };
 
-/** Average quality of life. */
-export const qolBase = refStd.water * refStd.food * refStd.energy;
+export const generation = 365 * 25;
 
-/** Facts about a planet. */
-export interface PlanetaryState {
-  /** Surface gravity of planet (m/s^2). */
-  gravity: number;
-  /** Distance from the sun in meters. */
-  distance: number;
-  /** Orbital period around the sun in Earth days. */
-  period: number;
-  /** Orbital theta position (rad). */
-  theta: number;
-
-  initResources: Resources;
+function perGenToDay(x: number): number {
+  return (1 + x) ** (1 / generation) - 1;
 }
 
 /** Initial data about the planets from NASA factsheet. */

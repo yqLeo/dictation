@@ -10,8 +10,6 @@ import chalk from "chalk";
 chalk.enabled = true;
 chalk.level = 1;
 
-import { Game } from "./game";
-
 Terminal.applyAddon(fit);
 
 /** Create and fit a new terminal into the screen. */
@@ -21,11 +19,12 @@ function createTerminal(): Terminal {
   ) as any;
 
   const term = new Terminal({
-    fontFamily: "'IBM Plex Mono', monospace",
+    fontFamily: "'Space Mono', monospace",
     fontWeight: "bold",
     cursorBlink: true,
     cols: 40,
-    rows: 20
+    rows: 20,
+    convertEol: true
   });
 
   term.open(terminalDiv);
@@ -45,6 +44,8 @@ function createTerminal(): Terminal {
 async function main(): Promise<void> {
   let term = createTerminal();
 
+  const { Game } = await import("./game");
+
   let game = new Game(term);
 
   await game.play();
@@ -52,7 +53,7 @@ async function main(): Promise<void> {
 
 WebFont.load({
   google: {
-    families: ["IBM Plex Mono"]
+    families: ["Space Mono"]
   },
   active: main
 });

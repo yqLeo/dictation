@@ -3,125 +3,22 @@
 import { Terminal } from "xterm";
 import chalk from "chalk";
 
+import { feedWrap } from "./text";
 import { Prompter, formatDiff, getCursor } from "./prompt";
 import * as setup from "./setup";
 import Cmd from "./cmd";
+import { Resources, units, Planet, Planets, zeroRes } from "./planet";
+import { Trade, Transfer } from "./transfer";
+
+import media from "./media";
+import * as ansi from "ansi-escapes";
 
 let devIndicator = false; // track whether to enable extra debugging
-
-/** Track State of Planetary Objects */
-class Planet {
-  /** Physical status of the planet. */
-  public info: setup.PlanetaryState;
-  /** Resources that have not been "mined" yet. */
-  public raw: setup.Resources;
-  /** Resources that are currently available. */
-  public available: setup.Resources;
-  /** Average change in resources per day (since last forward). */
-  public rate: setup.Resources;
-
-  constructor(public name: string, state: setup.PlanetaryState) {
-    this.info = Object.assign({}, state);
-    this.raw = Object.assign({}, state.initResources); // avoid reference
-    this.available = {
-      water: 0,
-      food: 0,
-      energy: 0,
-      population: state.initResources.population // copy population
-    };
-    this.rate = {
-      water: 0,
-      food: 0,
-      energy: 0,
-      population: 0
-    };
-  }
-
-  /** Number to measure quality of life. */
-  get totalQol(): number {
-    let qol = this.available.water;
-    qol *= this.available.food;
-    qol *= this.available.energy;
-    return qol;
-  }
-
-  get qolPerCapita(): number {
-    if (this.available.population == 0) {
-      return 0;
-    } else {
-      return this.totalQol / this.available.population ** 3;
-    }
-  }
-
-  /** X position of the planet. */
-  get x(): number {
-    return this.info.distance * Math.cos(this.info.theta);
-  }
-
-  /** Y position of the planet. */
-  get y(): number {
-    return this.info.distance * Math.sin(this.info.theta);
-  }
-
-  get escape(): number {
-    return this.info.gravity ** 2;
-  }
-
-  get productivity(): number {
-    return this.totalQol / setup.qolBase;
-  }
-
-  /** Calculate distance to another planet. */
-  distance(planet: Planet) {
-    const dx = planet.x - this.x;
-    const dy = planet.y - this.y;
-    return Math.sqrt(dx ** 2 + dy ** 2);
-  }
-
-  /** Step forward a single day for this planet. */
-  step() {
-    // calculate gain first
-    for (let res of Object.keys(this.available)) {
-      if (res == "population") {
-        this.available.population +=
-          setup.c.gainFactor *
-          this.available.population *
-          (this.productivity - 1);
-        this.available.population = Math.max(this.available.population, 0);
-      } else {
-        let dr = this.raw[res] * this.productivity;
-        dr = Math.min(dr, this.raw[res]); // cannot pull out more than exists
-        this.raw[res] -= dr;
-        this.available[res] += dr;
-      }
-    }
-
-    // calculate consumtion
-    for (let res of Object.keys(this.available)) {
-      // population taken into account above
-      if (res != "population") {
-        let dr = setup.refStd[res] * this.available.population;
-        this.available[res] -= Math.min(dr, this.available[res]); // cannot consume more than exists
-      }
-    }
-
-    this.info.theta += (2 * Math.PI) / this.info.period; // perform rotation
-  }
-
-  /** Simulate the planet forward in time. */
-  forward(days: number) {
-    for (let i = 0; i < days; i++) this.step();
-  }
-}
-
-type Planets = { [name: string]: Planet };
-
-const pairRgx = /^(.*) (.*)$/; // "<from> <to>"
 
 /** Master Game Logic */
 export class Game {
   public hError = (reason: Error) => {
-    if (typeof reason == "string") {
+    if (typeof reason === "string") {
       this.term.writeln(chalk.magentaBright(reason));
     } else {
       this.term.writeln(chalk.magentaBright(reason.message));
@@ -134,7 +31,7 @@ export class Game {
   public currentDay: number = 0;
   public planets: Planets;
   /** Amount of resources being transfered each day from one planet to another. */
-  public transfers: { [namePair: string]: setup.Resources } = {};
+  public trade = new Trade();
   /** Sum of all quality of life over game run. */
   public qolScore = 0;
 
@@ -154,10 +51,10 @@ export class Game {
     });
 
     cmd.asyncOn("check", async (args: Array<string>) => {
-      const names = args[1] == undefined ? [args[0]] : [args[0], args[1]];
+      const names = args[1] === undefined ? [args[0]] : [args[0], args[1]];
       // verify names make sense
       for (let name of names) {
-        if (Object.keys(this.planets).indexOf(name) == -1) {
+        if (Object.keys(this.planets).indexOf(name) === -1) {
           this.listPlanets();
           return; // exit fast
         }
@@ -178,7 +75,7 @@ export class Game {
 
     cmd.asyncOn("transfer", async (args: string[]) => {
       const res = args[0];
-      if (Object.keys(setup.refStd).indexOf(res) == -1) {
+      if (Object.keys(setup.refStd).indexOf(res) === -1) {
         this.listOptions("resources", Object.keys(setup.refStd));
         return;
       }
@@ -191,7 +88,7 @@ export class Game {
       }
       const fromP = this.planets[args[2]];
       const toP = this.planets[args[3]];
-      if (fromP == undefined || toP == undefined) {
+      if (fromP === undefined || toP === undefined) {
         this.listPlanets();
         return;
       }
@@ -204,17 +101,35 @@ export class Game {
     const planets: { [name: string]: Planet } = {};
     for (let name in setup.planets) {
       planets[name] = new Planet(name, (setup.planets as any)[name]);
-      if (name == "earth") {
+      if (name === "earth") {
         planets[name].available = Object.assign({}, setup.earthAvailable);
       }
     }
     this.planets = planets;
   }
 
+  get textWidth(): number {
+    return this.term.cols - 1;
+  }
+
+  writelnWrap(s: string): void {
+    this.term.writeln(feedWrap(s, this.textWidth));
+  }
+
+  center(s: string): string {
+    if (s.length > this.textWidth) {
+      throw new Error("cannot center text longer than terminal width");
+    } else {
+      const padding = " ".repeat(Math.floor((this.textWidth - s.length) / 2));
+      return padding + s;
+    }
+  }
+
   async play(): Promise<void> {
     this.term.focus();
 
-    this.term.writeln(setup.openingText);
+    this.term.writeln("\n" + setup.openingText);
+    this.writelnWrap(media.introduction);
 
     // start game with 1 year of progress
     this.term.writeln("Waiting one year automatically...");
@@ -252,7 +167,7 @@ export class Game {
     this.term.write(sep[0]);
     for (let word of sep.slice(1)) {
       if (this.term.cols - (await getCursor(this.term)).x <= word.length) {
-        this.term.write("\n\r");
+        this.term.write("\n");
       } else {
         this.term.write(` ${word}`);
       }
@@ -273,13 +188,13 @@ export class Game {
   }
 
   /** Print available resources and their changes over time. */
-  listResources(av: setup.Resources, ra?: setup.Resources): void {
+  listResources(av: Resources, ra?: Resources): void {
     for (let resource in av) {
       const available: number = av[resource];
-      let data = `${available.toExponential(2)}`;
+      let data = `${available.toExponential(2)}${units[resource]}`;
 
       // only add rate information if necessary
-      if (ra != undefined) {
+      if (ra !== undefined) {
         const rate: number = ra[resource];
         data += ` ${formatDiff(rate)}`;
       }
@@ -301,22 +216,9 @@ export class Game {
     this.showPlanetStatus(planet);
 
     // provide extra info if necessary
-    if (planetTo != undefined) {
+    if (planetTo !== undefined) {
       // print transfer information
-      const res = this.getTransfer(planet, planetTo);
-      // might need to correct sign of values
-      let corrected: setup.Resources;
-      if (planet.name <= planetTo.name) {
-        corrected = res;
-      } else {
-        // flip signs
-        corrected = {
-          water: -res.water,
-          food: -res.food,
-          energy: -res.energy,
-          population: -res.population
-        };
-      }
+      const res = this.trade.getTransfer(planet, planetTo);
 
       this.term.writeln(
         chalk.blueBright(
@@ -326,7 +228,7 @@ export class Game {
       this.term.writeln(
         `  distance: ${planet.distance(planetTo).toExponential(2)}`
       );
-      this.listResources(corrected);
+      this.listResources(res);
 
       // print other planet's status
       this.showPlanetStatus(planetTo);
@@ -334,11 +236,13 @@ export class Game {
   }
 
   async forward(days: number, subdivide = 10, wait = 5000) {
+    // TODO redo this and turn it into a continuous update mechanism
+
     // bind abort option
     this.term.writeln("Hit (q) to stop.");
     let abort = false;
     const aborter = (key: string) => {
-      if (key == "q") {
+      if (key === "q") {
         abort = true;
       }
     };
@@ -357,7 +261,7 @@ export class Game {
 
       // calculate number of rounds (days) needed to wait for this portion
       let rounds: number;
-      if (i == subdivide - 1) {
+      if (i === subdivide - 1) {
         rounds = days % subdivide;
       } else {
         rounds = Math.floor(days / subdivide);
@@ -397,77 +301,18 @@ export class Game {
     }
 
     // process transfers
-    for (let [namePair, res] of Object.entries(this.transfers)) {
-      const { p1, p2 } = this.rgxTransfer(namePair); // already in order
-      for (let name in res) {
-        let reqE: number = Math.abs(setup.c.transferFactor * res[name]); // energy req to transfer amt
-        let dr: number;
-        if (res[name] >= 0) {
-          reqE += Math.abs(setup.c.escapeFactor * res[name] * p1.escape);
-          let loss = Math.min(p1.available.energy / reqE, 1); // when the transfer cannot be afforded
-          reqE = Math.min(reqE, p1.available.energy);
-          dr = Math.min(p1.available[name], res[name] * loss);
-        } else {
-          reqE += Math.abs(setup.c.escapeFactor * res[name] * p2.escape);
-          let loss = Math.min(p2.available.energy / reqE, 1); // when the transfer cannot be afforded
-          reqE = Math.min(reqE, p2.available.energy);
-          dr = Math.max(-p2.available[name], res[name] * loss);
-        }
-        p1.available[name] -= dr;
-        p2.available[name] += dr;
-      }
-    }
+    this.trade.forward();
   }
 
   async transfer(resource: string, amount: number, fromP: Planet, toP: Planet) {
     this.term.writeln(
-      `Setting up continual transfer of \n\r  ${formatDiff(
+      `Setting up continual transfer of \n  ${formatDiff(
         amount
-      )} \n\r${resource} from ${fromP.name.toUpperCase()} to ${toP.name.toUpperCase()}...`
+      )} \n${resource} from ${fromP.name.toUpperCase()} to ${toP.name.toUpperCase()}...`
     );
-    const res = this.getTransfer(fromP, toP);
-    // correct sign
-    if (fromP.name <= toP.name) {
-      res[resource] += amount;
-    } else {
-      res[resource] -= amount;
-    }
-  }
-
-  /** Convert key from transfers dictionary to planets. */
-  rgxTransfer(s: string): { p1: Planet; p2: Planet } {
-    const match = s.match(pairRgx);
-    if (match) {
-      let p1s = match[1];
-      let p2s = match[2];
-      let p1 = this.planets[p1s];
-      let p2 = this.planets[p2s];
-      return { p1: p1, p2: p2 };
-    } else {
-      // this should never happen
-      throw new Error("bad transfer pair");
-    }
-  }
-
-  getTransfer(p1: Planet, p2: Planet): setup.Resources {
-    const l = [p1.name, p2.name];
-    let res = this.transfers[l.sort().join(" ")];
-    // create a default zero-transfer if one does not exist
-    if (res == undefined) {
-      res = {
-        water: 0,
-        food: 0,
-        energy: 0,
-        population: 0
-      };
-      this.setTransfer(p1, p2, res);
-    }
-    return res;
-  }
-
-  setTransfer(p1: Planet, p2: Planet, t: setup.Resources): void {
-    const l = [p1.name, p2.name];
-    this.transfers[l.sort().join(" ")] = t;
+    const amts: Resources = zeroRes();
+    amts[resource] = amount;
+    this.trade.applyTransfer(new Transfer(fromP, toP, amts));
   }
 }
 

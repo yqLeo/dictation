@@ -16,6 +16,7 @@
     "eventemitter3": "^3.1.2",
     "html-webpack-template": "^6.2.0",
     "shlex": "^2.0.1",
+    "strip-ansi": "^5.2.0",
     "typescript": "^3.4.5",
     "webfontloader": "^1.6.28",
     "xterm": "^3.12.2"

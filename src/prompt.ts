@@ -18,20 +18,19 @@ export async function getCursor(term: Terminal): Promise<Position> {
   return new Promise<Position>(resolve => {
     let record = "";
 
-    const listener = (key: string, ev: KeyboardEvent) => {
+    const listener = term.onData(data => {
       // this assumes that no process interrupts the key stream from the terminal
-      record += key;
+      record += data;
 
       const match = record.match(/\x1b\[(\d*?);(\d*?)R/);
       if (match) {
         // will error on null match
         const y = Number(match[1]) - 1;
         const x = Number(match[2]) - 1;
-        term.off("data", listener);
+        listener.dispose();
         resolve({ x: x, y: y });
       }
-    };
-    term.on("data", listener);
+    });
 
     term.write(ansi.cursorGetPosition);
   });
@@ -64,14 +63,6 @@ export class Prompter {
 
   constructor(public term: Terminal, public prompt = "> ") {}
 
-  private inputSpace(col: number): number {
-    if (col < this.term.cols) {
-      return this.term.cols - this.prompt.length;
-    } else {
-      throw new Error("prompt is too large to fit in terminal");
-    }
-  }
-
   abbreviate(width: number, data: string): string {
     return data.slice(Math.min(0, -width));
   }
@@ -96,20 +87,20 @@ export class Prompter {
     return new Promise(resolve => {
       let data: string[] = [];
       this.history.push(data); // store data into history
-      let hIndex = 0;
+      // let hIndex = 0;
       const listener = (key: string, ev: KeyboardEvent): void => {
-        if (ev.key == "Enter") {
+        if (ev.key === "Enter") {
           this.term.off("key", listener); // remove input listener
           this.term.writeln(""); // move to the next line
           return resolve(data.join("")); // return data to promise
-        } /*else if (ev.key == "ArrowUp") { // HISTORY IS NOT WORKING
+        } /*else if (ev.key === "ArrowUp") { // HISTORY IS NOT WORKING
           hIndex = Math.max(hIndex - 1, 0);
           data = this.history[hIndex].slice(); // copy data from history
-        } else if (ev.key == "ArrowDown") {
+        } else if (ev.key === "ArrowDown") {
           hIndex = Math.min(hIndex + 1, this.history.length - 1);
           data = this.history[hIndex].slice(); // copy data from history
         } */ else if (
-          ev.key == "Backspace"
+          ev.key === "Backspace"
         ) {
           data.pop(); // remove character from input
         } else if (key.match(recordable)) {
@@ -148,7 +139,7 @@ export function formatDiff(dx: number, prec = 3): string {
   let color: string = "whiteBright";
   if (dx > 0) {
     color = "greenBright";
-  } else if (dx == 0) {
+  } else if (dx === 0) {
     color = "yellowBright";
   } else if (dx < 0) {
     color = "redBright";
