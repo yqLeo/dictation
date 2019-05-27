@@ -14,7 +14,7 @@ export function autocomplete(data: Array<string>): Array<string> {
     if (words.length == 1) {
         // use the base commands
         wordList = commandNames; 
-    } else if ((words[0] == "check" && words.length <= 3) || (words[0] == "transfer" && words.length >= 2 && words.length <= 5)){
+    } else if ((words[0] == "check" && words.length <= 3) || (words[0] == "transfer" && words.length >= 4 && words.length <= 5)){
         // first and second argument in check or third and fourth argument in transfer
         // either way we want to autocomplete a planet here
         wordList = planetNames; 
