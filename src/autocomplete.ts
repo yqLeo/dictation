@@ -7,6 +7,7 @@ let commandNames: string[] = ["check", "transfer", "help", "forward"];
 
 export function autocomplete(data: Array<string>): Array<string> {
     let words = data.join("").split(" "); // join all separate letters into one string
+    console.log(words);
     let currentWord = words[words.length - 1];
 
     let wordList:string[] = [];
@@ -24,7 +25,7 @@ export function autocomplete(data: Array<string>): Array<string> {
     }
 
     for (let word of wordList) {
-            if (word.includes(currentWord) && word.indexOf(currentWord) == 0) {
+            if (word.includes(currentWord) && word.indexOf(currentWord) == 0 && currentWord.length > 0) {
                 words[words.length - 1] = word;
                 break;
             }
