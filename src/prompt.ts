@@ -4,6 +4,7 @@ import { Terminal } from "xterm";
 import { split } from "shlex";
 import * as ansi from "ansi-escapes";
 import chalk from "chalk";
+import { autocomplete } from "./autocomplete";
 
 const recordable = /^(\.|-|\w| |")$/;
 
@@ -104,6 +105,10 @@ export class Prompter {
         ) {
           data.pop(); // remove character from input
         } else if (key.match(recordable)) {
+          // autocomplete if the user enters a space
+          if (ev.key === " ") {
+            data = autocomplete(data);
+          }
           data.push(key); // add character to input
         } else {
           return; // nothing of note, so exit fast
