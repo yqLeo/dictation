@@ -4,14 +4,13 @@ import { Terminal } from "xterm";
 import chalk from "chalk";
 
 import { feedWrap, VWord, feedTablify, Justify } from "./text";
-import { Prompter, formatDiff, getCursor } from "./prompt";
+import { Prompter, formatDiff, clear } from "./prompt";
 import * as setup from "./setup";
 import Cmd from "./cmd";
 import { Resources, units, Planet, Planets, zeroRes } from "./planet";
 import { Trade, Transfer } from "./transfer";
 
 import media from "./media";
-import * as ansi from "ansi-escapes";
 
 let devIndicator = false; // track whether to enable extra debugging
 
@@ -253,61 +252,45 @@ export class Game {
     }
   }
 
-  async forward(days: number, subdivide = 10, wait = 5000) {
-    // TODO redo this and turn it into a continuous update mechanism
-
-    // bind abort option
-    this.term.writeln("Hit (q) to stop.");
-    let abort = false;
-    const aborter = (key: string) => {
-      if (key === "q") {
-        abort = true;
-      }
-    };
-    this.term.on("key", aborter);
-
-    wait = Math.min(wait, wait * (days / subdivide));
-    subdivide = Math.min(subdivide, days); // don't waste time
-
-    // perform all updates
-    for (let i = 0; i < subdivide; i++) {
-      // split updates into sizable portions
-      let daysLeft = Math.round(((subdivide - i) / subdivide) * days);
-      // provide simple feedback
-      this.term.writeln(`Waiting ${daysLeft} days...`);
-      let prevQol = this.qolScore;
-
-      // calculate number of rounds (days) needed to wait for this portion
-      let rounds: number;
-      if (i === subdivide - 1) {
-        rounds = days % subdivide;
-      } else {
-        rounds = Math.floor(days / subdivide);
-      }
-      // ensure current execution does not halt
-      const pUpdate = new Promise<void>(resolve => {
-        setImmediate(() => {
-          for (let r = 0; r < rounds; r++) this.update();
-          resolve();
-        });
-      });
-
-      // execute sleep and update at the same time
-      await Promise.all([pUpdate, sleep(wait / subdivide)]);
-
-      // give ongoing status
-      this.term.writeln(
-        `  QOL: ${this.qolScore} ${formatDiff(this.qolScore - prevQol)}`
-      );
-
-      // abort if necessary
-      if (abort) {
-        break;
-      }
+  /** Step simulation at a (dps, days per second), refreshing screen every period (visPer). */
+  async forward(dps: number, visPer = 1000 / 10) {
+    // check validity of arguments
+    if (!(0 < dps) && !(dps < Number.MAX_SAFE_INTEGER)) {
+      throw new Error(`number ${dps} is out of bounds`);
+    }
+    if (!(0 < visPer)) {
+      throw new Error(`visual period ${visPer} <= 0`);
     }
 
-    // unbind abort option
-    this.term.off("key", aborter);
+    // bind abort option
+    let abort = false;
+    const aborter = this.term.onKey(e => {
+      if (e.key === "q") {
+        abort = true;
+        aborter.dispose();
+      }
+    });
+
+    await clear(this.term);
+    let queue = 0;
+    while (!abort) {
+      await clear(this.term, true);
+      // prevent spending too much time in update loop
+      let overslept = false;
+      const sp = sleep(visPer).then(() => {
+        overslept = true;
+      });
+
+      this.term.writeln(chalk`Hit {cyanBright (Q)} to stop.`);
+
+      queue += dps * visPer;
+
+      for (; queue >= 1 && !overslept; queue--) await this.update();
+
+      //this.summarize();
+
+      await sp; // ensure that minimum amount of time has passed
+    }
   }
 
   /** Update the game world by one day. */
@@ -320,6 +303,8 @@ export class Game {
 
     // process transfers
     this.trade.forward();
+
+    this.currentDay += 1;
   }
 
   async transfer(resource: string, amount: number, fromP: Planet, toP: Planet) {

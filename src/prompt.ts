@@ -57,6 +57,20 @@ export class CursorPosition {
   }
 }
 
+/** Clears the screen after the cursor and then returns cursor back. */
+export async function clear(term: Terminal, reset = false): Promise<void> {
+  if (reset) term.write(ansi.cursorTo(0, 0));
+
+  const pos = await new CursorPosition(term).save();
+
+  term.write(
+    (ansi.eraseEndLine + "\n").repeat(term.rows - 1) + ansi.eraseEndLine
+  );
+
+  pos.y = 0;
+  pos.restore();
+}
+
 /** Provide user input abilities. */
 export class Prompter {
   public history: string[][] = [];

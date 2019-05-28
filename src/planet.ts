@@ -168,7 +168,10 @@ export class Planet {
           this.foodPerCapita / setup.refStd.food - sim.hungerFactor;
         growth *= quench + fullness;
         this.available.population += growth * sim.gainFactor;
-        this.available.population = Math.max(this.available.population, 0);
+        this.available.population = Math.max(
+          Math.round(this.available.population),
+          0
+        );
       } else {
         let dr = this.raw[res] * this.productivity * sim.gainFactor;
         dr = Math.min(dr, this.raw[res]); // cannot pull out more than exists
